@@ -32,8 +32,8 @@ export class MainComponent implements OnInit {
     this.remove(task);
   }
 
-  showNumber() {
-    console.log(this.number);
+  showText() {
+    console.log("test text");
   }
 
 
