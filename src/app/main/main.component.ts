@@ -11,7 +11,7 @@ export class MainComponent implements OnInit {
   tasksDone: Array<string> = [];
   tasksList: Array<string> = [];
   tasksRandom: Array<string> = ['Posprzątać mieszkanie', "Wynieść śmieci"];
-  number: number = 0;
+  number: number;
   isClicked: boolean = false;
 
   add() {
@@ -30,6 +30,11 @@ export class MainComponent implements OnInit {
   done(task: string) {
     this.tasksDone.push(task);
     this.remove(task);
+  }
+
+  randomNumber() {
+    this.number = Math.random()*2;
+    console.log(this.number)
   }
 
 
