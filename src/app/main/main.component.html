@@ -1,0 +1,33 @@
+<div>
+    <div class="container">
+        <div>
+            <input [(ngModel)] = "newTask">
+            <button (click)="add()">Dodaj zadanie</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div>Lista zadań:
+            <ng-container *ngIf="tasksList.length == 0">
+                <div>Masz czas wolny, brak zadań</div>
+            </ng-container>
+                <ul>
+                    <li *ngFor="let task of tasksList">
+                        {{task}}
+                        <button (click)="remove(task)">Usuń</button>
+                        <button (click)="done(task)">Zrobione</button>
+                    </li>
+                </ul>
+
+        </div>
+        <div>Zadania wykonane:
+            <div>Ile zadań udało Ci sie zrobić: {{tasksDone.length}}</div>
+            <ul>
+                <li *ngFor="let taskDone of tasksDone">
+                    {{taskDone}}
+                </li>
+            </ul>
+        </div>
+
+    </div>
+</div>
