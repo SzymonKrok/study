@@ -33,8 +33,8 @@ export class MainComponent implements OnInit {
   }
 
   randomNumber() {
-    this.number = Math.random()*2;
-    console.log(this.number)
+    this.number = Math.floor(Math.random()*2);
+    console.log(this.number);
   }
 
 
