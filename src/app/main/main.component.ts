@@ -35,6 +35,7 @@ export class MainComponent implements OnInit {
   randomNumber() {
     this.number = Math.floor(Math.random()*2);
     console.log(this.number);
+    console.log("number")
   }
 
 
