@@ -9,7 +9,7 @@ import { PrismaModule } from './prisma/prisma.module';
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    PrismaModule
+    PrismaModule,
   ],
   controllers: [AppController],
   providers: [AppService],
