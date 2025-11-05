@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -16,17 +13,597 @@ datasource db {
   url       = env("APP_DATABASE_URL")
 }
 
-model User {
-  id    Int     @id @default(autoincrement())
-  email String  @unique
-  name  String?
-  posts Post[]
+// ============================================================================
+// ENUMS
+// ============================================================================
+
+enum Role {
+  ADMIN
+  TEACHER
+  STUDENT
+  PARENT
 }
 
-model Post {
-  id      Int     @id @default(autoincrement())
-  title   String  @unique
-  content String?
-  author    User?   @relation(fields: [authorId], references: [id])
-  authorId  Int?
+enum AttendanceStatus {
+  PRESENT           // Obecny
+  ABSENT_EXCUSED    // Nieobecny usprawiedliwiony
+  ABSENT_UNEXCUSED  // Nieobecny nieusprawiedliwiony
+  LATE              // Spóźniony
+  EXCUSED           // Zwolniony
+}
+
+enum GradeType {
+  PARTIAL           // Ocena cząstkowa (zwykła ocena)
+  SEMESTER          // Ocena semestralna
+  FINAL             // Ocena końcowa (roczna)
+  BEHAVIOR          // Ocena z zachowania
+}
+
+enum EventType {
+  SCHOOL_WIDE       // Dla całej szkoły
+  CLASS             // Dla konkretnej klasy
+  INDIVIDUAL        // Dla konkretnego ucznia
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+// ============================================================================
+// AUTHENTICATION & USERS
+// ============================================================================
+
+model User {
+  id        String    @id @default(cuid())
+  username  String    @unique // Login (np. "jkowalski", "2024001")
+  email     String    @unique
+  password  String    // Zahashowane hasło (bcrypt w NestJS)
+  role      Role
+  
+  // Relacje do konkretnych ról
+  student   Student?
+  teacher   Teacher?
+  parent    Parent?
+  admin     Admin?
+  
+  // Metadata
+  isActive  Boolean   @default(true)
+  lastLogin DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Soft delete
+
+  @@index([username])
+  @@index([email])
+  @@index([role])
+}
+
+// ============================================================================
+// PEOPLE MODELS
+// ============================================================================
+
+model Student {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Dane osobowe
+  firstName     String
+  lastName      String
+  pesel         String?   @unique
+  dateOfBirth   DateTime
+  placeOfBirth  String?
+  
+  // Dane kontaktowe
+  phone         String?
+  address       String?
+  city          String?
+  postalCode    String?
+  
+  // Dane szkolne
+  classId       String?
+  class         Class?    @relation(fields: [classId], references: [id])
+  studentNumber String    @unique // Numer w dzienniku
+  
+  // Relacje
+  parents       StudentParent[]
+  grades        Grade[]
+  attendances   Attendance[]
+  events        Event[]       @relation("StudentEvents")
+  homeworks     HomeworkSubmission[]
+  
+  // Metadata
+  enrollmentDate DateTime  @default(now())
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime? // Soft delete
+
+  @@index([classId])
+  @@index([lastName, firstName])
+  @@index([studentNumber])
+}
+
+model Teacher {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Dane osobowe
+  firstName     String
+  lastName      String
+  title         String?   // np. "mgr", "dr", "prof."
+  pesel         String?   @unique
+  dateOfBirth   DateTime?
+  
+  // Dane kontaktowe
+  phone         String
+  email         String    @unique
+  address       String?
+  city          String?
+  postalCode    String?
+  
+  // Dane zawodowe
+  isDirector     Boolean   @default(false) // Czy jest dyrektorem szkoły
+  employmentDate DateTime @default(now())
+  
+  // Relacje
+  subjects      TeacherSubject[]
+  classTeacher  Class[]       @relation("ClassTeacher") // Wychowawca
+  grades        Grade[]
+  attendances   Attendance[]
+  schedules     Schedule[]
+  homeworks     Homework[]
+  
+  // Metadata
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime? // Soft delete
+
+  @@index([lastName, firstName])
+  @@index([email])
+}
+
+model Parent {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Dane osobowe
+  firstName     String
+  lastName      String
+  pesel         String?   @unique
+  
+  // Dane kontaktowe
+  phone         String
+  email         String    @unique
+  address       String?
+  city          String?
+  postalCode    String?
+  
+  // Relacje
+  students      StudentParent[]
+  
+  // Metadata
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime? // Soft delete
+
+  @@index([lastName, firstName])
+  @@index([email])
+}
+
+model Admin {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Dane osobowe
+  firstName     String
+  lastName      String
+  
+  // Dane kontaktowe
+  phone         String?
+  email         String    @unique
+  
+  // Metadata
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime? // Soft delete
+
+  @@index([email])
+}
+
+// ============================================================================
+// SCHOOL STRUCTURE
+// ============================================================================
+
+model Class {
+  id              String    @id @default(cuid())
+  name            String    @unique // np. "3A", "2B"
+  level           Int       // Poziom klasy (1, 2, 3)
+  profile         String?   // np. "matematyczny", "humanistyczny"
+  
+  // Wychowawca
+  classTeacherId  String?
+  classTeacher    Teacher?  @relation("ClassTeacher", fields: [classTeacherId], references: [id])
+  
+  // Relacje
+  students        Student[]
+  subjects        ClassSubject[]
+  schedules       Schedule[]
+  events          Event[]
+  homeworks       Homework[]
+  
+  // Rok szkolny
+  schoolYear      String    // np. "2024/2025"
+  
+  // Metadata
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime? // Soft delete
+
+  @@index([name])
+  @@index([schoolYear])
+}
+
+model Subject {
+  id              String    @id @default(cuid())
+  name            String    @unique // np. "Matematyka", "Język polski"
+  code            String    @unique // np. "MAT", "POL"
+  description     String?
+  
+  // Relacje
+  teachers        TeacherSubject[]
+  classes         ClassSubject[]
+  grades          Grade[]
+  schedules       Schedule[]
+  homeworks       Homework[]
+  
+  // Metadata
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime? // Soft delete
+
+  @@index([name])
+  @@index([code])
+}
+
+model Classroom {
+  id              String    @id @default(cuid())
+  number          String    @unique // np. "101", "Sala gimnastyczna"
+  building        String?   // np. "Budynek A"
+  capacity        Int?      // Liczba miejsc
+  
+  // Relacje
+  schedules       Schedule[]
+  
+  // Metadata
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime? // Soft delete
+
+  @@index([number])
+}
+
+// ============================================================================
+// ACADEMIC
+// ============================================================================
+
+model GradeCategory {
+  id              String    @id @default(cuid())
+  name            String    @unique // np. "Sprawdzian", "Kartkówka", "Odpowiedź ustna"
+  code            String    @unique // np. "SPR", "KART", "UST"
+  defaultWeight   Float     @default(1.0) // Domyślna waga
+  color           String?   // Kolor dla UI (hex)
+  
+  // Relacje
+  grades          Grade[]
+  
+  // Metadata
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime? // Soft delete
+
+  @@index([name])
+}
+
+model Grade {
+  id              String        @id @default(cuid())
+  
+  // Podstawowe info
+  value           Float         // Wartość oceny (1-6, możliwe 4.5 itp)
+  type            GradeType     @default(PARTIAL)
+  weight          Float         @default(1.0)
+  
+  // Relacje
+  studentId       String
+  student         Student       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  teacherId       String
+  teacher         Teacher       @relation(fields: [teacherId], references: [id])
+  
+  subjectId       String
+  subject         Subject       @relation(fields: [subjectId], references: [id])
+  
+  categoryId      String?
+  category        GradeCategory? @relation(fields: [categoryId], references: [id])
+  
+  // Dodatkowe info
+  description     String?       // Opis (np. "Klasówka z trygonometrii")
+  comment         String?       // Komentarz nauczyciela
+  date            DateTime      @default(now())
+  semester        Int           // 1 lub 2
+  
+  // Metadata
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?     // Soft delete
+
+  @@index([studentId])
+  @@index([teacherId])
+  @@index([subjectId])
+  @@index([date])
+  @@index([semester])
+}
+
+model Schedule {
+  id              String      @id @default(cuid())
+  
+  // Plan lekcji
+  dayOfWeek       DayOfWeek
+  startTime       String      // Format: "08:00"
+  endTime         String      // Format: "08:45"
+  lessonNumber    Int         // Numer lekcji (1, 2, 3...)
+  
+  // Relacje
+  classId         String
+  class           Class       @relation(fields: [classId], references: [id], onDelete: Cascade)
+  
+  subjectId       String
+  subject         Subject     @relation(fields: [subjectId], references: [id])
+  
+  teacherId       String
+  teacher         Teacher     @relation(fields: [teacherId], references: [id])
+  
+  classroomId     String?
+  classroom       Classroom?  @relation(fields: [classroomId], references: [id])
+  
+  // Rok szkolny
+  schoolYear      String      // np. "2024/2025"
+  
+  // Relacje do obecności
+  attendances     Attendance[]
+  
+  // Metadata
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  deletedAt       DateTime?   // Soft delete
+
+  @@unique([classId, dayOfWeek, lessonNumber, schoolYear])
+  @@index([classId])
+  @@index([teacherId])
+  @@index([dayOfWeek])
+}
+
+model Attendance {
+  id              String            @id @default(cuid())
+  
+  // Status obecności
+  status          AttendanceStatus
+  
+  // Relacje
+  studentId       String
+  student         Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  scheduleId      String
+  schedule        Schedule          @relation(fields: [scheduleId], references: [id], onDelete: Cascade)
+  
+  teacherId       String
+  teacher         Teacher           @relation(fields: [teacherId], references: [id])
+  
+  // Data i czas
+  date            DateTime          @default(now())
+  
+  // Dodatkowe info
+  comment         String?           // Komentarz (np. powód nieobecności)
+  excusedBy       String?           // Kto usprawiedliwił
+  excusedAt       DateTime?         // Kiedy usprawiedliwiono
+  
+  // Metadata
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?         // Soft delete
+
+  @@unique([studentId, scheduleId, date])
+  @@index([studentId])
+  @@index([scheduleId])
+  @@index([date])
+  @@index([status])
+}
+
+model Homework {
+  id              String              @id @default(cuid())
+  
+  // Podstawowe info
+  title           String
+  description     String
+  
+  // Relacje
+  subjectId       String
+  subject         Subject             @relation(fields: [subjectId], references: [id])
+  
+  teacherId       String
+  teacher         Teacher             @relation(fields: [teacherId], references: [id])
+  
+  classId         String
+  class           Class               @relation(fields: [classId], references: [id], onDelete: Cascade)
+  
+  // Terminy
+  assignedDate    DateTime            @default(now())
+  dueDate         DateTime
+  
+  // Opcjonalne
+  attachmentUrl   String?             // URL do załącznika
+  maxPoints       Int?                // Maksymalna liczba punktów
+  
+  // Relacje
+  submissions     HomeworkSubmission[]
+  
+  // Metadata
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  deletedAt       DateTime?           // Soft delete
+
+  @@index([classId])
+  @@index([subjectId])
+  @@index([teacherId])
+  @@index([dueDate])
+}
+
+model HomeworkSubmission {
+  id              String    @id @default(cuid())
+  
+  // Relacje
+  homeworkId      String
+  homework        Homework  @relation(fields: [homeworkId], references: [id], onDelete: Cascade)
+  
+  studentId       String
+  student         Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  // Oddana praca
+  submittedAt     DateTime?
+  content         String?   // Treść pracy (jeśli tekstowa)
+  attachmentUrl   String?   // URL do załącznika
+  
+  // Ocena
+  grade           Float?    // Ocena (jeśli jest)
+  points          Int?      // Punkty
+  feedback        String?   // Feedback od nauczyciela
+  gradedAt        DateTime?
+  
+  // Status
+  isLate          Boolean   @default(false)
+  
+  // Metadata
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  deletedAt       DateTime? // Soft delete
+
+  @@unique([homeworkId, studentId])
+  @@index([homeworkId])
+  @@index([studentId])
+}
+
+// ============================================================================
+// EVENTS & CALENDAR
+// ============================================================================
+
+model Event {
+  id              String            @id @default(cuid())
+  
+  // Podstawowe info
+  title           String
+  description     String?
+  type            EventType
+  
+  // Data i czas
+  startDate       DateTime
+  endDate         DateTime
+  isAllDay        Boolean           @default(false)
+  
+  // Lokalizacja
+  location        String?
+  
+  // Relacje (opcjonalne - zależnie od typu)
+  classId         String?
+  class           Class?            @relation(fields: [classId], references: [id])
+  
+  studentId       String?
+  student         Student?          @relation("StudentEvents", fields: [studentId], references: [id])
+  
+  // Metadata
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  deletedAt       DateTime?         // Soft delete
+
+  @@index([type])
+  @@index([startDate])
+  @@index([classId])
+  @@index([studentId])
+}
+
+// ============================================================================
+// JUNCTION TABLES (Many-to-Many Relations)
+// ============================================================================
+
+model StudentParent {
+  id              String    @id @default(cuid())
+  
+  studentId       String
+  student         Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  parentId        String
+  parent          Parent    @relation(fields: [parentId], references: [id], onDelete: Cascade)
+  
+  // Typ relacji (opcjonalnie)
+  relationship    String?   // np. "matka", "ojciec", "opiekun prawny"
+  
+  // Metadata
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([studentId, parentId])
+  @@index([studentId])
+  @@index([parentId])
+}
+
+model TeacherSubject {
+  id              String    @id @default(cuid())
+  
+  teacherId       String
+  teacher         Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  
+  subjectId       String
+  subject         Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  
+  // Metadata
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([teacherId, subjectId])
+  @@index([teacherId])
+  @@index([subjectId])
+}
+
+model ClassSubject {
+  id              String    @id @default(cuid())
+  
+  classId         String
+  class           Class     @relation(fields: [classId], references: [id], onDelete: Cascade)
+  
+  subjectId       String
+  subject         Subject   @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  
+  teacherId       String?   // Nauczyciel prowadzący ten przedmiot w tej klasie
+  
+  // Liczba godzin tygodniowo
+  hoursPerWeek    Int       @default(1)
+  
+  // Rok szkolny
+  schoolYear      String    // np. "2024/2025"
+  
+  // Metadata
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([classId, subjectId, schoolYear])
+  @@index([classId])
+  @@index([subjectId])
+  @@index([teacherId])
 }
